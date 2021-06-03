@@ -1,0 +1,314 @@
+---
+title: "Evaluation of Somatic Mutations in Solid Metastatic 
+Pan-Cancer Patients"
+date: 18January2021; update 1June2021
+name: COH_solid_metastatic.Rmd
+output: html_document
+purpose: Performs all analyses and generates main figures for the  manuscript
+author: Moom R. Roosan
+---
+```{r setup, include=FALSE, echo=FALSE}
+library(ALL)
+library(stringr)
+library(survival)
+library(survminer)
+library(stringi)
+library(tidyr)
+library(GenVisR)
+library(reshape2)
+library(circlize)
+library(discover)
+library(vioplot)
+library(ComplexHeatmap)
+library(pheatmap)
+library(Hmisc)
+
+load("coh_fm.rda")
+```
+
+
+## Figure 1
+```{r Figure 1,echo=FALSE,cache=TRUE,warning=FALSE}
+col <- c("amplification"='#4f00A8', "splice.site"='#ca66ae', "indel"='#009933', "rearrangement"='#ff9b34', "SNV"='#A80079',"truncation"='red',"VUS"='lightblue2')
+
+oncoPrint(
+  simp_fm,
+  alter_fun = list(
+    background = function(x, y, w, h)
+      grid.rect(x, y, w * 0.9, h * 0.9, gp = gpar(fill = "lightgrey", col = NA)),
+     SNV = function(x, y, w, h)
+       grid.rect(x, y, w * 0.9, h * 0.9,
+                 gp = gpar(fill = col["SNV"], col = NA)),
+     amplification = function(x, y, w, h)
+       grid.rect(x, y, w * 0.9, h* 0.4,
+                 gp = gpar(fill = col["amplification"], col = NA)),
+    splice.site = function(x, y, w, h)
+      grid.rect(x, y, w * 0.9, h * 0.9,
+                gp = gpar(fill = col["splice.site"], col = NA)),
+    rearrangement = function(x, y, w, h)
+      grid.rect(x, y, w * 0.9, h* 0.4,
+                gp = gpar(fill = col["rearrangement"], col = NA)),
+    truncation = function(x, y, w, h)
+      grid.rect(x, y, w * 0.9, h * 0.9,
+                gp = gpar(fill = col["truncation"], col = NA)),
+    indel = function(x, y, w, h)
+      grid.rect(x, y, w * 0.9, h * 0.9,
+                gp = gpar(fill = col["indel"], col = NA)),
+    VUS = function(x, y, w, h)
+      grid.rect(x, y, w * 0.9, h* 0.4,
+                gp = gpar(fill = col["VUS"], col = NA))
+  ),
+  col = col,
+  row_names_gp = gpar(fontsize = 13, fontface = 2),
+  column_names_gp = gpar(fontsize = 13, fontface = 2),
+  pct_gp = gpar(fontsize = 13, fontface = 2),
+  bottom_annotation = HeatmapAnnotation(Gender = clinicalData$value[clinicalData$variable=="Sex"],
+                                        Stage = clinicalData$value[clinicalData$variable=="Stage"],
+                                        Cancer.Type = clinicalData$value[clinicalData$variable=="Major.Classification"],na_col = "white",
+                                        col = list(Gender=c(female="pink",male="blue"),
+                                                   Stage=c(I = "orange",II = "green",III = "light blue",IV = "brown3"),
+                                                   Major.Classification=c(c("Breast" = "lightpink","Colorectal"= "#e69127","Gastrointestinal" = "#99758","Genitourinary" = "#c2ed67","Gynecological" = "red", "Head and Neck" = "cadetblue","Thoracic" = "red"
+                                                   ))))
+)
+
+
+
+
+wilcox.test(coh_umich[1:11,2],coh_umich[12:22,2],exact = F)
+ggdotchart(coh_umich, x = "Gene", y = "Frequency",
+                     color = "Source",                                # Color by groups
+                     palette = c("brown3","cadetblue"), # Custom color palette
+                     sorting = "descending",                       # Sort value in descending order
+                     add = "segments",                             # Add segments from y = 0 to dots
+                     add.params = list(color = "lightgray", size = 2), # Change segment color and size
+                     group = "Gene",                                # Order by groups
+                     dot.size = 8,                                 # Large dot size
+                     label = coh_umich$Frequency,                        # Add mpg values as dot labels
+                     font.label = list(color = "white", size = 8, 
+                                       vjust = 0.5),              # Adjust label parameters
+                     
+                     ggtheme = theme_pubr()                        # ggplot2 theme
+)+
+  geom_hline(yintercept = 0, linetype = 2, color = "gray")+
+  labs( x = "",y = "Frequency")+
+  theme(
+    axis.title.x = element_text(size = 14, face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold")
+  )
+
+```
+
+## Figure 2
+
+```{r Figure 2,echo=FALSE,cache=TRUE,warning=FALSE}
+events <- discover.matrix(fm_model)
+subset_first <- rowSums(fm_model) > 35##147 genes with more than 35 mutation in the cohort
+
+result.mutex <- pairwise.discover.test(events[subset_first,],alternative = "less", correct = T)
+result.mutex
+print(result.mutex, fdr.threshold=0.01)
+as.data.frame(result.mutex)#
+#plot(events[c("KRAS", "EGFR", "ERBB2","VHL","RB1","CDKN2A","CDKN2B","APC","CCND1", "TP53"),])
+
+result.mutco <- pairwise.discover.test(events[subset_first,],alternative = "greater",correct = T)
+result.mutco
+print(result.mutco, fdr.threshold=0.01)
+as.data.frame(result.mutco)
+
+#plot(events[subset_first,])
+coex <-
+  unique(
+    c(as.data.frame(result.mutco)[, 1], as.data.frame(result.mutco)[, 2]#,
+    #as.data.frame(result.mutex)[, 1],
+    #as.data.frame(result.mutex)[, 2]
+    )
+  )
+
+
+#plot(events[subset_first,])
+result.mutcoex<-pairwise.discover.test(events[subset_first,],alternative = c("less", "greater"),correct = T)
+print(result.mutcoex, fdr.threshold=0.01)
+table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2]))[order(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2])),decreasing = T)]
+#plot(events[unique(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2])),])
+####
+
+
+co_genes<-names(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2]))[order(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2])),decreasing = T)][table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2]))[order(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2])),decreasing = T)]>1])
+
+co_chord<-as.data.frame(result.mutco)
+co_chord<-co_chord[co_chord$gene1%in%co_genes&co_chord$gene2%in%co_genes,]
+co_chord$value<- -log10(abs(co_chord$p.value))
+co_chord$p.value<-NULL
+co_chord$q.value<-NULL
+colnames(co_chord)<-c("from","to")
+chordDiagram(co_chord,scale = T)
+
+
+co_genes<-names(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2]))[order(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2])),decreasing = T)][table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2]))[order(table(c(as.data.frame(result.mutco)[,1],as.data.frame(result.mutco)[,2])),decreasing = T)]>1])
+
+ex_chord<-as.data.frame(result.mutex)
+#co_chord<-co_chord[co_chord$gene1%in%co_genes&co_chord$gene2%in%co_genes,]
+ex_chord$value<- -log10(abs(ex_chord$p.value))
+ex_chord$p.value<-NULL
+ex_chord$q.value<-NULL
+colnames(ex_chord)<-c("from","to")
+
+chordDiagram(ex_chord,scale = T)
+
+
+```
+
+## Figure 3
+```{r Figure 3,echo=FALSE,cache=TRUE,warning=FALSE}
+apc<-ggsurvplot(
+  survfit(Surv(OS..months., dflag) ~ all_surv_merged[,"APC"],
+          all_surv_merged, subset = OS..months.<61),
+  legend.title = "APC",
+  palette = "jama",
+  legend.labs = c("None","Mutation"),
+  pval = TRUE,
+  risk.table = T,
+  xlab = "Time (in months)",
+  ylab = "OS Probability",
+  #surv.median.line="hv",
+  break.time.by = 12
+)
+
+cdkn2a<-ggsurvplot(
+  survfit(Surv(OS..months., dflag) ~ all_surv_merged[,"CDKN2A"],
+          all_surv_merged, subset = OS..months.<61),
+  legend.title = "CDKN2A",
+  palette = "jama",
+  legend.labs = c("None","Mutation"),
+  pval = TRUE,
+  risk.table = T,
+  xlab = "Time (in months)",
+  ylab = "OS Probability",
+  #surv.median.line="hv",
+  break.time.by = 12
+)
+
+apc_cdkn2a<-ggsurvplot(
+  survfit(
+  Surv(OS..months.,dflag) ~ APC+CDKN2A,all_surv_merged,
+   subset = OS..months.<61),
+  #legend.title = "Time to Test since Diagnonsis",
+  palette = "jama",
+  legend.labs = c("APC-/CDKN2A-","APC-/CDKN2A+","APC+/CDKN2A-","APC+/CDKN2A+"),
+  pval = TRUE,
+  risk.table = T,
+  xlab="Time (in months)",
+  ylab = "OS Probability",
+  #surv.median.line="hv",
+  break.time.by=12
+)
+
+pairwise_survdiff(Surv(OS..months.,dflag) ~ APC+CDKN2A,all_surv_merged[all_surv_merged$OS..months.< 61,], p.adjust.method = "bonferroni", rho = 0)
+
+ggarrange(
+  ggarrange(ggarrange(apc$plot,apc$table,nrow=2,heights = c(2,1)),ggarrange(cdkn2a$plot,cdkn2a$table,nrow=2,heights = c(2,1)), ncol = 2, labels = c("A", "B")),
+  ggarrange(apc_cdkn2a$plot,apc_cdkn2a$table,nrow=2,heights=c(2,1)),
+  nrow = 2, 
+ labels = c("A","C"))
+
+
+```
+
+## Figure 4
+
+```{r Figure 4,echo=FALSE,cache=TRUE,warning=FALSE}
+col_fun = colorRamp2(c(0,10, 300), c("blue", "white", "red"))
+column_ha = HeatmapAnnotation(No.drugs=anno_boxplot(No.drugs))
+row_ha = rowAnnotation( No.patients = anno_barplot(No.patients))
+colnames(drug_heatmap)[colnames(drug_heatmap)=="GI"]<-"Gastrointestinal"
+colnames(drug_heatmap)[colnames(drug_heatmap)=="GU"]<-"Genitourinary"
+
+Heatmap(drug_heatmap, name = "Drug.frequency", top_annotation = column_ha, right_annotation = row_ha,col = col_fun)
+
+```
+
+
+## Figure 5
+```{r Figure 5,echo=FALSE,cache=TRUE,warning=FALSE}
+os_targeted<-ggsurvplot(
+  survfit(Surv(OS..months., dflag) ~ targeted,
+          all_surv_merged, subset = OS..months.<61),
+  legend.title = "Therapy",
+  palette = "jama",
+  legend.labs = c("Traditional therapy","Targeted therapy"),
+  pval = TRUE,
+  risk.table = T,
+  xlab = "Time (in months)",
+  ylab = "OS Probability",
+  #surv.median.line="hv",
+  break.time.by = 12
+)
+
+
+pfs_targeted<-ggsurvplot(
+  survfit(Surv(PFS.months, pflag) ~ targeted,
+          all_surv_merged,subset = PFS.months<61),
+  legend.title = "Therapy",
+  palette = "jama",
+  legend.labs = c("Traditional therapy","Targeted therapy"),
+  pval = TRUE,
+  risk.table = T,
+  xlab = "Time (in months)",
+  ylab = "PFS Probability",
+  #surv.median.line="hv",
+  break.time.by = 12
+)
+
+
+ggarrange(ggarrange(os_targeted$plot,os_targeted$table,nrow = 2,heights = c(2,1)),ggarrange(pfs_targeted$plot,pfs_targeted$table,nrow=2,heights = c(2,1)),nrow = 2,labels = c("A","B"))
+
+
+```
+
+
+## Figure S2
+```{r Figure S2,echo=FALSE,cache=TRUE,warning=FALSE}
+ggforest(coxph(Surv(I(OS..months.),dflag) ~
+              Age+Sex+Major.Classification+APC+CDKN2A,all_surv_merged))
+```
+
+
+## Figure S3
+```{r Figure S3,echo=FALSE,cache=TRUE,warning=FALSE }
+#TTT analysis
+ttt<-all_surv_merged[!all_surv_merged$TTT<0,]
+ttt$Report.year<- as.numeric(stri_sub(ttt$Report.Date,-4,-1))
+ttt$met_yr[ttt$Report.year < 2015]<-"Pre-2015"
+ttt$met_yr[is.na(ttt$met_yr)]<-"Post-2015"
+as.numeric(stri_sub(ttt$Date.of.Collection,-4,-1))
+ttt$OS..months.<-as.numeric(ttt$OS..months.)
+
+
+
+ggsurvplot(
+  survfit(
+    Surv(ttt$OS..months.,ttt$dflag) ~ ttt$met_yr,ttt,subset =ttt$OS..months.<61 ),
+  #legend.title = "Time to Test since Diagnonsis",
+  palette = "jama",
+   legend.labs = c("2015 or later","Prior to 2015"),
+  pval = TRUE,
+  risk.table = T,
+  xlab="Time (in months)",
+  ylab = "OS Probability",
+  surv.median.line="hv",
+  break.time.by=24
+)
+
+```
+
+
+
+
+```{r, echo=FALSE}
+time<-format(Sys.time(),"%a %b %d %X %Y")
+```
+This analysis was run on `r time` 
+
+
+
+
